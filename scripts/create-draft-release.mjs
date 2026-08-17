@@ -8,6 +8,7 @@ const API_ORIGIN = 'https://api.github.com';
 const UPLOAD_ORIGIN = 'https://uploads.github.com';
 const API_VERSION = '2022-11-28';
 const MAX_ATTEMPTS = 4;
+const MAX_RELEASE_PAGES = 10;
 const REQUEST_TIMEOUT_MS = 60_000;
 const TRANSIENT_CODES = new Set([
   'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH', 'ECONNREFUSED',
@@ -154,29 +155,62 @@ function validateRelease(release, context) {
   return release;
 }
 
+function validateReleaseListItem(release) {
+  if (!Number.isSafeInteger(release?.id) || release.id <= 0) throw new Error('Release list item ID is invalid');
+  if (typeof release.tag_name !== 'string' || release.tag_name.length === 0) throw new Error('Release list item tag is invalid');
+  if (typeof release.draft !== 'boolean') throw new Error('Release list item draft state is invalid');
+  if (typeof release.prerelease !== 'boolean') throw new Error('Release list item prerelease state is invalid');
+  if (typeof release.target_commitish !== 'string' || release.target_commitish.length === 0) throw new Error('Release list item target commit is invalid');
+  return release;
+}
+
 async function lookupRelease(context) {
-  return requestJson(context, {
-    pathname: `/repos/${context.repository}/releases/tags/${encodeURIComponent(RELEASE_TAG)}`,
-    stage: 'lookup-draft', allow404: true,
-  });
+  const matches = [];
+  for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
+    const releases = await requestJson(context, {
+      pathname: `/repos/${context.repository}/releases?per_page=100&page=${page}`,
+      stage: 'list-releases',
+    });
+    if (!Array.isArray(releases)) throw new Error('Release list response is not an array');
+    if (releases.length > 100) throw new Error('Release list page exceeds policy');
+    for (const release of releases) {
+      validateReleaseListItem(release);
+      if (release.tag_name === RELEASE_TAG) matches.push(release);
+    }
+    if (matches.length > 1) throw new Error('Multiple Releases exist for the exact tag');
+    if (releases.length < 100) return matches[0] ?? null;
+  }
+  throw new Error(`Release lookup exceeded ${MAX_RELEASE_PAGES} full pages`);
 }
 
 async function ensureDraft(context) {
-  return withRetry(context, 'ensure-draft', async () => {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const existing = await lookupRelease(context);
     if (existing) return validateRelease(existing, context);
-    const created = await requestJsonOnce(context, {
-      pathname: `/repos/${context.repository}/releases`, method: 'POST', stage: 'create-draft',
-      body: {
-        tag_name: RELEASE_TAG,
-        target_commitish: context.sha,
-        name: 'FFmpeg 9.0.1 + LAME 3.100 r1',
-        draft: true,
-        prerelease: false,
-      },
-    });
-    return validateRelease(created, context);
-  });
+    try {
+      const created = await requestJsonOnce(context, {
+        pathname: `/repos/${context.repository}/releases`, method: 'POST', stage: 'create-draft',
+        body: {
+          tag_name: RELEASE_TAG,
+          target_commitish: context.sha,
+          name: 'FFmpeg 9.0.1 + LAME 3.100 r1',
+          draft: true,
+          prerelease: false,
+        },
+      });
+      return validateRelease(created, context);
+    } catch (error) {
+      const classification = retryClassification(error);
+      if (!classification || attempt === MAX_ATTEMPTS) {
+        diagnostic(context, 'ensure-draft', { status: classification ?? 'non-retryable', attempt: `${attempt}/${MAX_ATTEMPTS}`, final: true });
+        throw error;
+      }
+      const delay = error.retryAfter ?? 1000 * (2 ** (attempt - 1));
+      diagnostic(context, 'ensure-draft', { status: classification, attempt: `${attempt}/${MAX_ATTEMPTS}`, retryInMs: delay });
+      await context.sleep(delay);
+    }
+  }
+  throw new Error('Unreachable Draft creation state');
 }
 
 function validateRemoteAsset(remote, local) {
@@ -295,7 +329,7 @@ function configFromEnvironment(environment = process.env) {
   };
 }
 
-export const testing = { ASSET_NAMES, retryAfterMilliseconds, validateRemoteAsset };
+export const testing = { ASSET_NAMES, MAX_RELEASE_PAGES, retryAfterMilliseconds, validateRemoteAsset };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let config;

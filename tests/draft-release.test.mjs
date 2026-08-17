@@ -30,8 +30,10 @@ function harness(options = {}) {
     release: options.release === undefined ? null : options.release,
     assets: options.assets ? [...options.assets] : [],
     createStatuses: [...(options.createStatuses ?? [])],
+    listStatuses: [...(options.listStatuses ?? [])],
     uploadStatuses: new Map(Object.entries(options.uploadStatuses ?? {}).map(([name, values]) => [name, [...values]])),
     createCount: 0,
+    listCount: 0,
     uploadCount: 0,
     waits: [],
     logs: [],
@@ -49,12 +51,19 @@ function harness(options = {}) {
     if (url.hostname === 'api.github.com' && url.pathname.includes('/git/ref/tags/')) {
       return json({ object: { type: 'commit', sha: SHA } });
     }
-    if (url.hostname === 'api.github.com' && url.pathname.endsWith('/releases/tags/ffmpeg-9.0.1-lame-3.100-r1')) {
-      return state.release ? json(draft()) : json({ message: 'not found body must stay secret' }, 404);
+    if (url.hostname === 'api.github.com' && url.pathname.endsWith('/releases') && init.method !== 'POST') {
+      state.listCount += 1;
+      const status = state.listStatuses.shift() ?? 200;
+      if (status !== 200) return json({ message: 'list response body must stay secret' }, status, options.retryAfter ? { 'retry-after': options.retryAfter } : {});
+      const page = Number(url.searchParams.get('page'));
+      if (options.releasePages) return json(options.releasePages[page - 1] ?? []);
+      return json(state.release ? [draft()] : []);
     }
     if (url.hostname === 'api.github.com' && url.pathname.endsWith('/releases') && init.method === 'POST') {
       state.createCount += 1;
-      const status = state.createStatuses.shift() ?? 201;
+      const outcome = state.createStatuses.shift() ?? 201;
+      const status = typeof outcome === 'number' ? outcome : outcome.status;
+      if (typeof outcome === 'object' && outcome.persistDraft) state.release = {};
       if (status !== 201) return json({ message: 'create response body must stay secret' }, status, options.retryAfter ? { 'retry-after': options.retryAfter } : {});
       state.release = {};
       return json(draft(), 201);
@@ -93,6 +102,85 @@ test('first HTTP 429 retries and creates one Draft', async () => {
   await context.run();
   assert.equal(context.state.createCount, 2);
   assert.deepEqual(context.state.waits, [1000]);
+});
+
+test('first page matching Draft is reused', async () => {
+  const context = harness({ release: {} });
+  await context.run();
+  assert.equal(context.state.createCount, 0);
+  assert.ok(context.state.listCount >= 1);
+});
+
+test('second page matching Draft is reused', async () => {
+  const fillers = Array.from({ length: 100 }, (_, index) => ({
+    id: 1000 + index, tag_name: `other-${index}`, target_commitish: SHA, draft: false, prerelease: false,
+  }));
+  const context = harness({ releasePages: [fillers, [{ id: 77, tag_name: 'ffmpeg-9.0.1-lame-3.100-r1', target_commitish: SHA, draft: true, prerelease: false }]] });
+  await context.run();
+  assert.equal(context.state.createCount, 0);
+  assert.ok(context.state.listCount >= 2);
+});
+
+test('other tags are ignored before creating the Draft', async () => {
+  const context = harness({ releasePages: [[{ id: 88, tag_name: 'other-tag', target_commitish: SHA, draft: false, prerelease: false }]] });
+  await context.run();
+  assert.equal(context.state.createCount, 1);
+});
+
+test('multiple Releases for the exact tag fail closed', async () => {
+  const matching = { tag_name: 'ffmpeg-9.0.1-lame-3.100-r1', target_commitish: SHA, draft: true, prerelease: false };
+  const context = harness({ releasePages: [[{ id: 77, ...matching }, { id: 78, ...matching }]] });
+  await assert.rejects(context.run(), /Multiple Releases/);
+  assert.equal(context.state.createCount, 0);
+});
+
+test('List releases retries first HTTP 429 then succeeds', async () => {
+  const context = harness({ release: {}, listStatuses: [429, 200] });
+  await context.run();
+  assert.deepEqual(context.state.waits, [1000]);
+  assert.equal(context.state.createCount, 0);
+});
+
+test('List releases retries two HTTP 503 responses then succeeds', async () => {
+  const context = harness({ release: {}, listStatuses: [503, 503, 200] });
+  await context.run();
+  assert.deepEqual(context.state.waits, [1000, 2000]);
+});
+
+test('List releases Retry-After is applied and capped', async () => {
+  const context = harness({ release: {}, listStatuses: [429, 200], retryAfter: '90' });
+  await context.run();
+  assert.deepEqual(context.state.waits, [30_000]);
+});
+
+test('maximum full List releases pages fail closed', async () => {
+  const pages = Array.from({ length: testing.MAX_RELEASE_PAGES }, (_, page) => Array.from({ length: 100 }, (__, index) => ({
+    id: page * 100 + index + 1, tag_name: `other-${page}-${index}`, target_commitish: SHA, draft: false, prerelease: false,
+  })));
+  const context = harness({ releasePages: pages });
+  await assert.rejects(context.run(), /exceeded .* full pages/);
+  assert.equal(context.state.createCount, 0);
+});
+
+test('non-array List releases response fails closed', async () => {
+  const context = harness({ releasePages: [{ not: 'an array' }] });
+  await assert.rejects(context.run(), /not an array/);
+  assert.equal(context.state.createCount, 0);
+});
+
+test('lost transient POST response is recovered by listing before another POST', async () => {
+  const context = harness({ createStatuses: [{ status: 503, persistDraft: true }] });
+  await context.run();
+  assert.equal(context.state.createCount, 1);
+  assert.equal(context.state.listCount, 2);
+  assert.ok(context.state.release);
+});
+
+test('HTTP 422 from Draft creation is not retried', async () => {
+  const context = harness({ createStatuses: [422] });
+  await assert.rejects(context.run(), /HTTP 422/);
+  assert.equal(context.state.createCount, 1);
+  assert.deepEqual(context.state.waits, []);
 });
 
 test('asset upload retries two HTTP 503 responses then succeeds', async () => {
