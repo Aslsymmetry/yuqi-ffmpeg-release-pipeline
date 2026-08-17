@@ -11,6 +11,7 @@
     "verify:set": "node scripts/verify-release-set.mjs build/output",
     "manifest": "node scripts/create-manifest.mjs",
     "package": "node scripts/create-release-package.mjs",
+    "release:verify-key": "node scripts/verify-production-signing-key.mjs",
     "release:sign": "node scripts/create-signed-release.mjs",
     "test": "node --test tests/*.test.mjs"
   },

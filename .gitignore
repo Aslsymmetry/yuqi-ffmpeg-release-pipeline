@@ -2,5 +2,6 @@ node_modules/
 build/
 dist/
 *.pem
+!trust/production/yuqi-ffmpeg-ed25519-public.pem
 *.key
 .DS_Store

@@ -18,6 +18,13 @@ The ZIP contains a payload manifest. The separately signed release-envelope mani
 
 ## Release key and rotation
 
-The production Ed25519 private PKCS#8 PEM is stored only as the encrypted Actions secret `YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM`. The release job derives the public key in memory, recreates the package manifests with that key identity, signs, and verifies before upload. Its public SPKI PEM, SHA-256 fingerprint, owner/repository, and allowed key IDs must be pinned in Yuqi Downloader. Rotation requires an app release that trusts both old and new public keys; publish with the new key only after that app is deployed, then remove the old key in a later app release. Never rotate through an unsigned network manifest.
+The production public trust anchor is `trust/production/yuqi-ffmpeg-ed25519-public.pem`; its independently recorded metadata is `trust/production/yuqi-ffmpeg-ed25519-fingerprint.txt`.
+
+- Public SPKI DER SHA-256: `65c3365329bb4384569541a79a9400415fd04cbc0b7bab462952e59c3f815272`
+- Key ID: `ed25519-sha256:65c3365329bb4384`
+
+The production Ed25519 private PKCS#8 PEM exists only in the GitHub `production` Environment Secret `YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM` and an encrypted offline backup. It is never stored in this repository or release assets. Before signing, the release job derives a public key in memory and fails closed unless it exactly matches the pinned SPKI public key, fingerprint, and key ID. It then recreates the package manifests with that identity, signs, and verifies before upload. The public SPKI PEM, SHA-256 fingerprint, owner/repository, and allowed key IDs must also be pinned in Yuqi Downloader.
+
+Rotation requires a transition period in which existing and updated app versions can trust the applicable old and new keys. Ship an app release that trusts both keys before publishing with the new key; remove the old key only in a later app release after the transition period. Never rotate through an unsigned network manifest.
 
 The workflow does not publish on push. `workflow_dispatch` defaults to build-only. Publishing additionally requires an exact protected release tag and explicit `publish=true`; the release job fails closed without the private-key secret.

@@ -5,6 +5,7 @@ import test from 'node:test';
 const lock = JSON.parse(await readFile(new URL('../config/source-lock.json', import.meta.url)));
 const workflow = await readFile(new URL('../.github/workflows/build-release.yml', import.meta.url), 'utf8');
 const build = await readFile(new URL('../scripts/build-ffmpeg-arm64.sh', import.meta.url), 'utf8');
+const releaseVerifier = await readFile(new URL('../scripts/verify-production-signing-key.mjs', import.meta.url), 'utf8');
 
 test('source policy pins official HTTPS sources and hashes', () => {
   assert.equal(new URL(lock.ffmpeg.sourceUrl).hostname, 'ffmpeg.org');
@@ -23,4 +24,8 @@ test('workflow uses official arm64 label and publishing is explicit and draft', 
   assert.ok(workflow.includes("inputs.publish == true"));
   assert.ok(workflow.includes('--draft'));
   assert.ok(workflow.includes('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM'));
+  assert.ok(workflow.includes('environment: production'));
+  assert.ok(workflow.includes('npm run release:verify-key'));
+  assert.equal(releaseVerifier.includes('console.log'), false);
+  assert.equal(releaseVerifier.includes('console.error'), false);
 });

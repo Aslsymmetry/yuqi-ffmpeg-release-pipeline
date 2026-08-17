@@ -4,11 +4,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ASSET_BASE, ROOT } from './lib.mjs';
+import { verifyPinnedProductionSigningIdentity } from './production-trust.mjs';
 
 const privatePem = process.env.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM?.replace(/\\n/g, '\n');
 if (!privatePem) throw new Error('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM is required; production release fails closed.');
 const privateKey = createPrivateKey(privatePem);
 const publicPem = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
+await verifyPinnedProductionSigningIdentity(publicPem);
 const env = { ...process.env, YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: privatePem, YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM: publicPem };
 const dist = path.join(ROOT, 'dist');
 const manifest = path.join(dist, `${ASSET_BASE}.manifest.json`);
