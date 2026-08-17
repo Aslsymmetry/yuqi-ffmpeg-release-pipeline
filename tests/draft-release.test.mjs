@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { recoverDraftRelease, testing } from '../scripts/create-draft-release.mjs';
+import { parseReleaseTag } from '../scripts/release-metadata.mjs';
 
 const SHA = 'a'.repeat(40);
 const digest = (content) => createHash('sha256').update(content).digest('hex');
 
-function localAssets() {
-  return testing.ASSET_NAMES.map((name, index) => {
+function localAssets(names = testing.ASSET_NAMES) {
+  return names.map((name, index) => {
     const content = Buffer.from(`asset-${index}-${name}`);
     return { name, content, size: content.length, sha256: digest(content) };
   });
@@ -25,7 +26,8 @@ function remoteAsset(local, overrides = {}) {
 }
 
 function harness(options = {}) {
-  const assets = localAssets();
+  const metadata = options.metadata ?? parseReleaseTag('ffmpeg-9.0.1-lame-3.100-r1');
+  const assets = localAssets(metadata.assetNames);
   const state = {
     release: options.release === undefined ? null : options.release,
     assets: options.assets ? [...options.assets] : [],
@@ -38,9 +40,10 @@ function harness(options = {}) {
     waits: [],
     logs: [],
     timeoutCount: 0,
+    createBodies: [],
   };
   const draft = () => ({
-    id: 77, tag_name: 'ffmpeg-9.0.1-lame-3.100-r1', target_commitish: SHA,
+    id: 77, tag_name: metadata.releaseTag, target_commitish: SHA,
     draft: true, prerelease: false, ...state.release,
   });
   const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), {
@@ -61,6 +64,7 @@ function harness(options = {}) {
     }
     if (url.hostname === 'api.github.com' && url.pathname.endsWith('/releases') && init.method === 'POST') {
       state.createCount += 1;
+      state.createBodies.push(JSON.parse(init.body));
       const outcome = state.createStatuses.shift() ?? 201;
       const status = typeof outcome === 'number' ? outcome : outcome.status;
       if (typeof outcome === 'object' && outcome.persistDraft) state.release = {};
@@ -86,7 +90,7 @@ function harness(options = {}) {
   };
   const config = {
     token: 'github-token-must-not-appear', repository: 'owner/repository', runId: '123',
-    sha: SHA, assets,
+    sha: SHA, assets, metadata,
   };
   const dependencies = {
     fetchImpl,
@@ -102,6 +106,15 @@ test('first HTTP 429 retries and creates one Draft', async () => {
   await context.run();
   assert.equal(context.state.createCount, 2);
   assert.deepEqual(context.state.waits, [1000]);
+});
+
+test('r2 Draft uses the shared exact tag, title and asset names', async () => {
+  const metadata = parseReleaseTag('ffmpeg-9.0.1-lame-3.100-r2');
+  const context = harness({ metadata });
+  await context.run();
+  assert.deepEqual(context.assets.map((asset) => asset.name), metadata.assetNames);
+  assert.equal(context.state.createBodies[0].tag_name, metadata.releaseTag);
+  assert.equal(context.state.createBodies[0].name, metadata.releaseTitle);
 });
 
 test('first page matching Draft is reused', async () => {

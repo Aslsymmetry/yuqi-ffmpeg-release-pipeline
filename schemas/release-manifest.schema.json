@@ -9,7 +9,7 @@
     "schemaVersion": { "const": 1 },
     "minimumConsumerSchemaVersion": { "const": 1 },
     "manifestKind": { "enum": ["payload", "release-envelope"] },
-    "releaseTag": { "const": "ffmpeg-9.0.1-lame-3.100-r1" },
+    "releaseTag": { "pattern": "^ffmpeg-9\\.0\\.1-lame-3\\.100-r[1-9][0-9]*$" },
     "channel": { "const": "stable" },
     "ffmpegVersion": { "const": "9.0.1" },
     "ffprobeVersion": { "const": "9.0.1" },

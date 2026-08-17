@@ -2,10 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ASSET_BASE, RELEASE_TAG, canonicalJson, fileRecord, publicKeyFingerprint, sha256 } from './lib.mjs';
+import { canonicalJson, fileRecord, publicKeyFingerprint, sha256 } from './lib.mjs';
+import { assertProductionReleaseEnvironment, releaseMetadataFromEnvironment } from './release-metadata.mjs';
 import lock from '../config/source-lock.json' with { type: 'json' };
 
-export async function createManifest({ payload, packageFile, output, smokeTests }) {
+export async function createManifest({ payload, packageFile, output, smokeTests, metadata = releaseMetadataFromEnvironment() }) {
+  assertProductionReleaseEnvironment(metadata);
   const files = {
     ffmpeg: await fileRecord(path.join(payload, 'ffmpeg'), 'ffmpeg'),
     ffprobe: await fileRecord(path.join(payload, 'ffprobe'), 'ffprobe'),
@@ -19,7 +21,7 @@ export async function createManifest({ payload, packageFile, output, smokeTests 
   const fingerprint = publicKeyFingerprint(publicPem);
   const manifest = {
     schemaVersion: 1, minimumConsumerSchemaVersion: 1, manifestKind: packageFile ? 'release-envelope' : 'payload',
-    releaseTag: RELEASE_TAG, channel: 'stable', ffmpegVersion: '9.0.1', ffprobeVersion: '9.0.1', lameVersion: '3.100',
+    releaseTag: metadata.releaseTag, channel: 'stable', ffmpegVersion: metadata.ffmpegVersion, ffprobeVersion: metadata.ffmpegVersion, lameVersion: metadata.lameVersion,
     platform: 'darwin', architecture: 'arm64', deploymentTarget: '12.0', setId,
     packageFilename: packageFile ? path.basename(packageFile) : null,
     packageSha256: packageFile ? await sha256(packageFile) : null,

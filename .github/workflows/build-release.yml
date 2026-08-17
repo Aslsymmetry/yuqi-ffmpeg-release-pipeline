@@ -15,7 +15,7 @@ on:
         type: boolean
   push:
     tags:
-      - 'ffmpeg-9.0.1-lame-3.100-r1'
+      - 'ffmpeg-9.0.1-lame-3.100-r*'
 
 permissions:
   contents: read
@@ -29,6 +29,8 @@ jobs:
       artifact-digest: ${{ steps.upload_build_output.outputs['artifact-digest'] }}
     env:
       SOURCE_DATE_EPOCH: '1786924800'
+      YUQI_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      YUQI_NONPRODUCTION_FIXTURE: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -53,9 +55,10 @@ jobs:
           export YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM="$(cat /tmp/yuqi-ffmpeg-ci-test-key/test-private.pem)"
           export YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM="$(cat /tmp/yuqi-ffmpeg-ci-test-key/test-public.pem)"
           npm run package
-          node scripts/sign-manifest.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.sig
-          node scripts/verify-manifest.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.sig /tmp/yuqi-ffmpeg-ci-test-key/test-public.pem
-          node scripts/verify-release-package.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.zip dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json
+          asset_base="$(node -e "import('./scripts/release-metadata.mjs').then(({releaseMetadataFromEnvironment}) => console.log(releaseMetadataFromEnvironment().assetBase))")"
+          node scripts/sign-manifest.mjs "dist/$asset_base.manifest.json" "dist/$asset_base.manifest.sig"
+          node scripts/verify-manifest.mjs "dist/$asset_base.manifest.json" "dist/$asset_base.manifest.sig" /tmp/yuqi-ffmpeg-ci-test-key/test-public.pem
+          node scripts/verify-release-package.mjs "dist/$asset_base.zip" "dist/$asset_base.manifest.json"
           npm test
           rm -rf /tmp/yuqi-ffmpeg-ci-test-key
       - id: upload_build_output
@@ -98,6 +101,34 @@ jobs:
           ARTIFACT_DESTINATION: build/output
         run: node scripts/download-build-artifact.mjs
 
+  release-preflight:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    outputs:
+      release_allowed: ${{ steps.preflight.outputs.release_allowed }}
+      release_tag: ${{ steps.preflight.outputs.release_tag }}
+      release_title: ${{ steps.preflight.outputs.release_title }}
+      asset_base: ${{ steps.preflight.outputs.asset_base }}
+      ffmpeg_version: ${{ steps.preflight.outputs.ffmpeg_version }}
+      lame_version: ${{ steps.preflight.outputs.lame_version }}
+      revision_label: ${{ steps.preflight.outputs.revision_label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.22.0'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - id: preflight
+        name: Validate release request before production
+        env:
+          PUBLISH_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-preflight.mjs
+
   verify-reproducibility:
     if: github.event_name == 'workflow_dispatch' && inputs.publish == false && inputs.reproducibility_check == true
     runs-on: macos-15
@@ -130,13 +161,21 @@ jobs:
           node scripts/compare-reproducibility.mjs "$first/trace" "$second/trace"
 
   release:
-    needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+    needs: [build, release-preflight]
+    if: needs.build.result == 'success' && needs.release-preflight.result == 'success' && needs.release-preflight.outputs.release_allowed == 'true'
     runs-on: macos-15
     environment: production
     permissions:
       contents: write
       actions: read
+    env:
+      YUQI_PRODUCTION_RELEASE: 'true'
+      YUQI_RELEASE_TAG: ${{ needs.release-preflight.outputs.release_tag }}
+      YUQI_RELEASE_TITLE: ${{ needs.release-preflight.outputs.release_title }}
+      YUQI_ASSET_BASE: ${{ needs.release-preflight.outputs.asset_base }}
+      YUQI_FFMPEG_VERSION: ${{ needs.release-preflight.outputs.ffmpeg_version }}
+      YUQI_LAME_VERSION: ${{ needs.release-preflight.outputs.lame_version }}
+      YUQI_REVISION_LABEL: ${{ needs.release-preflight.outputs.revision_label }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -144,11 +183,11 @@ jobs:
           node-version: '22.22.0'
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-      - name: Require exact protected tag and signing secret
+      - name: Require validated release metadata and signing secret
         env:
           SIGNING_KEY: ${{ secrets.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM }}
         run: |
-          test "$GITHUB_REF" = 'refs/tags/ffmpeg-9.0.1-lame-3.100-r1'
+          node -e "import('./scripts/release-metadata.mjs').then(({releaseMetadataFromEnvironment}) => releaseMetadataFromEnvironment())"
           test -n "$SIGNING_KEY"
       - name: Download and verify exact build artifact
         env:

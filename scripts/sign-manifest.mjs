@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { canonicalJson, publicKeyFingerprint } from './lib.mjs';
+import { assertProductionReleaseEnvironment, parseReleaseTag } from './release-metadata.mjs';
 
 const [manifestPath, signaturePath] = process.argv.slice(2);
 if (!manifestPath || !signaturePath) throw new Error('Usage: sign-manifest MANIFEST SIGNATURE');
@@ -9,6 +10,10 @@ if (!privatePem) throw new Error('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM is require
 const privateKey = createPrivateKey(privatePem.replace(/\\n/g, '\n'));
 const publicPem = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+const metadata = parseReleaseTag(manifest.releaseTag);
+assertProductionReleaseEnvironment(metadata);
+if (process.env.YUQI_RELEASE_TAG && process.env.YUQI_RELEASE_TAG !== metadata.releaseTag) throw new Error('Manifest release tag does not match validated release metadata');
+if (process.env.YUQI_ASSET_BASE && process.env.YUQI_ASSET_BASE !== metadata.assetBase) throw new Error('Manifest asset metadata does not match validated release metadata');
 const fingerprint = publicKeyFingerprint(publicPem);
 if (manifest.signing?.publicKeyFingerprint !== fingerprint || manifest.signing?.keyId !== `ed25519-sha256:${fingerprint.slice(0, 16)}`) throw new Error('Manifest signing key metadata does not match private key');
 const signature = sign(null, Buffer.from(canonicalJson(manifest)), privateKey).toString('base64');

@@ -5,13 +5,16 @@ import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promis
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { ASSET_BASE, ROOT, canonicalJson, publicKeyFingerprint, sha256 } from '../scripts/lib.mjs';
+import { ROOT, canonicalJson, publicKeyFingerprint, sha256 } from '../scripts/lib.mjs';
+import { parseReleaseTag } from '../scripts/release-metadata.mjs';
 
 const run = (file, args, options = {}) => execFileSync(file, args, { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, ...options });
 const key = generateKeyPairSync('ed25519');
 const privatePem = key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 const publicPem = key.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-const env = { ...process.env, SOURCE_DATE_EPOCH: '1786924800', YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: privatePem, YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM: publicPem };
+const metadata = parseReleaseTag('ffmpeg-9.0.1-lame-3.100-r2');
+const ASSET_BASE = metadata.assetBase;
+const env = { ...process.env, SOURCE_DATE_EPOCH: '1786924800', YUQI_RELEASE_TAG: metadata.releaseTag, YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: privatePem, YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM: publicPem };
 const dist = path.join(ROOT, 'dist');
 const zip = path.join(dist, `${ASSET_BASE}.zip`);
 const manifest = path.join(dist, `${ASSET_BASE}.manifest.json`);
@@ -38,6 +41,9 @@ test('build output packages, signs, verifies and rejects supply-chain mutations'
     await writeFile(publicKey, publicPem);
     run(process.execPath, [path.join(ROOT, 'scripts/verify-manifest.mjs'), manifest, signature, publicKey]);
     run(process.execPath, [path.join(ROOT, 'scripts/verify-release-package.mjs'), zip, manifest]);
+    const releaseManifest = JSON.parse(await readFile(manifest, 'utf8'));
+    assert.equal(releaseManifest.releaseTag, metadata.releaseTag);
+    assert.equal(releaseManifest.packageFilename, metadata.assetNames[0]);
 
     const tamperedManifest = path.join(temporary, 'tampered.manifest.json');
     await copyFile(manifest, tamperedManifest);

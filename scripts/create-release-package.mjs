@@ -1,8 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { ASSET_BASE, EXPECTED_ENTRIES, ROOT, RELEASE_TAG, canonicalJson, sha256 } from './lib.mjs';
+import { EXPECTED_ENTRIES, ROOT, canonicalJson, sha256 } from './lib.mjs';
 import { createManifest } from './create-manifest.mjs';
+import { releaseMetadataFromEnvironment } from './release-metadata.mjs';
+
+const metadata = releaseMetadataFromEnvironment();
 
 const output = path.join(ROOT, 'dist');
 const payload = path.join(output, 'staging', 'yuqi-ffmpeg');
@@ -17,16 +20,16 @@ await cp(path.join(ROOT, 'distribution/licenses/FFmpeg-LGPL-2.1.txt'), path.join
 await cp(path.join(ROOT, 'distribution/licenses/LAME-LGPL-2.0.txt'), path.join(payload, 'licenses/LAME-LGPL-2.0.txt'));
 await cp(path.join(ROOT, 'distribution/source-information/FFmpeg-source-information.txt'), path.join(payload, 'source-information/FFmpeg-source-information.txt'));
 const verification = JSON.parse(execFileSync(process.execPath, [path.join(ROOT, 'scripts/verify-release-set.mjs'), path.join(ROOT, 'build/output')], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }));
-const provenance = { schemaVersion: 1, releaseTag: RELEASE_TAG, setId: verification.setId, builder: 'scripts/build-ffmpeg-arm64.sh', sourceLock: 'config/source-lock.json', verification };
+const provenance = { schemaVersion: 1, releaseTag: metadata.releaseTag, setId: verification.setId, builder: 'scripts/build-ffmpeg-arm64.sh', sourceLock: 'config/source-lock.json', verification };
 await writeFile(path.join(payload, 'build-provenance.json'), `${canonicalJson(provenance)}\n`);
-await createManifest({ payload, output: path.join(payload, 'manifest.json'), packageFile: null, smokeTests: verification.smokeTests });
+await createManifest({ payload, output: path.join(payload, 'manifest.json'), packageFile: null, smokeTests: verification.smokeTests, metadata });
 const sumPaths = ['ffmpeg', 'ffprobe', 'lib/libmp3lame.0.dylib', 'build-provenance.json', 'licenses/FFmpeg-LGPL-2.1.txt', 'licenses/LAME-LGPL-2.0.txt', 'source-information/FFmpeg-source-information.txt'];
 await writeFile(path.join(payload, 'SHA256SUMS'), `${(await Promise.all(sumPaths.map(async (name) => `${await sha256(path.join(payload, name))}  ${name}`))).join('\n')}\n`);
 await mkdir(output, { recursive: true });
-const zip = path.join(output, `${ASSET_BASE}.zip`);
+const zip = path.join(output, `${metadata.assetBase}.zip`);
 await rm(zip, { force: true });
 execFileSync('/usr/bin/zip', ['-X', '-q', '-r', zip, 'yuqi-ffmpeg'], { cwd: path.dirname(payload) });
-const external = path.join(output, `${ASSET_BASE}.manifest.json`);
-const manifest = await createManifest({ payload, output: external, packageFile: zip, smokeTests: verification.smokeTests });
-await writeFile(path.join(output, `${ASSET_BASE}.SHA256SUMS`), `${await sha256(zip)}  ${path.basename(zip)}\n${await sha256(external)}  ${path.basename(external)}\n`);
+const external = path.join(output, `${metadata.assetBase}.manifest.json`);
+const manifest = await createManifest({ payload, output: external, packageFile: zip, smokeTests: verification.smokeTests, metadata });
+await writeFile(path.join(output, `${metadata.assetBase}.SHA256SUMS`), `${await sha256(zip)}  ${path.basename(zip)}\n${await sha256(external)}  ${path.basename(external)}\n`);
 console.log(JSON.stringify({ zip, externalManifest: external, setId: manifest.setId, packageSha256: manifest.packageSha256, packageSize: manifest.packageSize }, null, 2));

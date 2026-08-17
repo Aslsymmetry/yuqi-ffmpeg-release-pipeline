@@ -4,8 +4,6 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const RELEASE_TAG = 'ffmpeg-9.0.1-lame-3.100-r1';
-export const ASSET_BASE = 'yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1';
 export const EXPECTED_ENTRIES = [
   'yuqi-ffmpeg/', 'yuqi-ffmpeg/ffmpeg', 'yuqi-ffmpeg/ffprobe', 'yuqi-ffmpeg/lib/',
   'yuqi-ffmpeg/lib/libmp3lame.0.dylib', 'yuqi-ffmpeg/manifest.json',

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ASSET_BASE, RELEASE_TAG, ROOT } from './lib.mjs';
+import { ROOT } from './lib.mjs';
+import { FIXTURE_RELEASE_TAG, parseReleaseTag, releaseMetadataFromEnvironment } from './release-metadata.mjs';
 
 const API_ORIGIN = 'https://api.github.com';
 const UPLOAD_ORIGIN = 'https://uploads.github.com';
@@ -15,12 +16,7 @@ const TRANSIENT_CODES = new Set([
   'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
 ]);
 const TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
-const ASSET_NAMES = [
-  `${ASSET_BASE}.zip`,
-  `${ASSET_BASE}.manifest.json`,
-  `${ASSET_BASE}.manifest.sig`,
-  `${ASSET_BASE}.SHA256SUMS`,
-];
+const FIXTURE_METADATA = parseReleaseTag(FIXTURE_RELEASE_TAG);
 
 class ApiError extends Error {
   constructor(stage, status, retryAfter) {
@@ -74,7 +70,7 @@ function diagnostic(context, stage, details = {}) {
   const fields = [
     `release run=${context.runId}`,
     `sha=${context.sha}`,
-    `tag=${RELEASE_TAG}`,
+    `tag=${context.metadata.releaseTag}`,
     `stage=${stage}`,
   ];
   for (const [name, value] of Object.entries(details)) if (value !== undefined) fields.push(`${name}=${value}`);
@@ -134,7 +130,7 @@ async function requestJson(context, options) {
 
 async function resolveTagTarget(context) {
   let object = (await requestJson(context, {
-    pathname: `/repos/${context.repository}/git/ref/tags/${encodeURIComponent(RELEASE_TAG)}`,
+    pathname: `/repos/${context.repository}/git/ref/tags/${encodeURIComponent(context.metadata.releaseTag)}`,
     stage: 'verify-tag',
   }))?.object;
   for (let depth = 0; depth < 4 && object?.type === 'tag'; depth += 1) {
@@ -148,7 +144,7 @@ async function resolveTagTarget(context) {
 
 function validateRelease(release, context) {
   if (!Number.isSafeInteger(release?.id) || release.id <= 0) throw new Error('Draft Release ID is invalid');
-  if (release.tag_name !== RELEASE_TAG) throw new Error('Draft Release tag mismatch');
+  if (release.tag_name !== context.metadata.releaseTag) throw new Error('Draft Release tag mismatch');
   if (release.draft !== true) throw new Error('A published Release already exists for this tag');
   if (release.prerelease !== false) throw new Error('Draft Release prerelease state is forbidden');
   if (release.target_commitish !== context.sha) throw new Error('Draft Release target commit mismatch');
@@ -175,7 +171,7 @@ async function lookupRelease(context) {
     if (releases.length > 100) throw new Error('Release list page exceeds policy');
     for (const release of releases) {
       validateReleaseListItem(release);
-      if (release.tag_name === RELEASE_TAG) matches.push(release);
+      if (release.tag_name === context.metadata.releaseTag) matches.push(release);
     }
     if (matches.length > 1) throw new Error('Multiple Releases exist for the exact tag');
     if (releases.length < 100) return matches[0] ?? null;
@@ -191,9 +187,9 @@ async function ensureDraft(context) {
       const created = await requestJsonOnce(context, {
         pathname: `/repos/${context.repository}/releases`, method: 'POST', stage: 'create-draft',
         body: {
-          tag_name: RELEASE_TAG,
+          tag_name: context.metadata.releaseTag,
           target_commitish: context.sha,
-          name: 'FFmpeg 9.0.1 + LAME 3.100 r1',
+          name: context.metadata.releaseTitle,
           draft: true,
           prerelease: false,
         },
@@ -264,8 +260,8 @@ async function uploadAsset(context, releaseId, local) {
   });
 }
 
-async function loadLocalAssets(directory = path.join(ROOT, 'dist')) {
-  return Promise.all(ASSET_NAMES.map(async (name) => {
+async function loadLocalAssets(metadata, directory = path.join(ROOT, 'dist')) {
+  return Promise.all(metadata.assetNames.map(async (name) => {
     const file = path.join(directory, name);
     const content = await readFile(file);
     const size = (await stat(file)).size;
@@ -277,6 +273,7 @@ async function loadLocalAssets(directory = path.join(ROOT, 'dist')) {
 export async function recoverDraftRelease(config, dependencies = {}) {
   const context = {
     ...config,
+    metadata: config.metadata ?? FIXTURE_METADATA,
     fetchImpl: dependencies.fetchImpl ?? globalThis.fetch,
     sleep: dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))),
     timeoutFactory: dependencies.timeoutFactory ?? ((milliseconds) => AbortSignal.timeout(milliseconds)),
@@ -317,32 +314,33 @@ export async function recoverDraftRelease(config, dependencies = {}) {
 }
 
 function configFromEnvironment(environment = process.env) {
+  const metadata = releaseMetadataFromEnvironment(environment);
   const sha = required(environment.GITHUB_SHA, 'GITHUB_SHA');
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('GITHUB_SHA is invalid');
-  if (environment.GITHUB_REF !== `refs/tags/${RELEASE_TAG}`) throw new Error('GITHUB_REF does not match the exact protected release tag');
   return {
     token: required(environment.GITHUB_TOKEN, 'GITHUB_TOKEN'),
     repository: safeRepository(environment.GITHUB_REPOSITORY),
     runId: required(environment.GITHUB_RUN_ID, 'GITHUB_RUN_ID'),
     sha,
+    metadata,
     assets: null,
   };
 }
 
-export const testing = { ASSET_NAMES, MAX_RELEASE_PAGES, retryAfterMilliseconds, validateRemoteAsset };
+export const testing = { ASSET_NAMES: FIXTURE_METADATA.assetNames, MAX_RELEASE_PAGES, retryAfterMilliseconds, validateRemoteAsset };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let config;
   try {
     config = configFromEnvironment();
-    config.assets = await loadLocalAssets();
+    config.assets = await loadLocalAssets(config.metadata);
     await recoverDraftRelease(config);
   } catch (error) {
     const code = errorCode(error);
     const safe = code && TRANSIENT_CODES.has(code) ? code : error instanceof ApiError ? `HTTP ${error.status}` : 'policy-error';
     const detail = error instanceof ApiError || (code && TRANSIENT_CODES.has(code)) ? safe : error.message;
     const safeDetail = /(?:https?:\/\/|authorization|bearer|token=|private key)/i.test(detail) ? 'redacted unsafe error detail' : detail;
-    console.error(`release run=${config?.runId ?? 'unknown'} sha=${config?.sha ?? 'unknown'} tag=${RELEASE_TAG} stage=failed status=${safe} detail=${safeDetail}`);
+    console.error(`release run=${config?.runId ?? 'unknown'} sha=${config?.sha ?? 'unknown'} tag=${config?.metadata?.releaseTag ?? 'unknown'} stage=failed status=${safe} detail=${safeDetail}`);
     process.exitCode = 1;
   }
 }

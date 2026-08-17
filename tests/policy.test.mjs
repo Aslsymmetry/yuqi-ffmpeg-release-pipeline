@@ -64,7 +64,7 @@ test('release job preserves artifact output by checking out before download', ()
   const checkout = stepIndex(steps, (step) => step.kind === 'uses' && step.value.startsWith('actions/checkout@'), 'checkout');
   const setupNode = stepIndex(steps, (step) => step.kind === 'uses' && step.value.startsWith('actions/setup-node@'), 'setup-node');
   const npmCi = stepIndex(steps, (step) => step.kind === 'run' && step.value === 'npm ci --ignore-scripts', 'npm ci');
-  const secretCheck = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Require exact protected tag and signing secret', 'signing secret check');
+  const secretCheck = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Require validated release metadata and signing secret', 'signing secret check');
   const download = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Download and verify exact build artifact', 'internal artifact download');
   const identity = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Verify production signing identity against pinned trust', 'signing identity verification');
   const sign = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Sign with protected release key', 'release signing');
@@ -109,9 +109,9 @@ test('non-production handoff job is isolated from production identity', () => {
   assert.match(verifyJob, /if: github\.event_name == 'workflow_dispatch' && inputs\.publish == false/);
   assert.equal(verifyJob.includes('environment: production'), false);
   assert.equal(verifyJob.includes('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM'), false);
-  assert.equal(verifyJob.includes('Require exact protected tag and signing secret'), false);
+  assert.equal(verifyJob.includes('Require validated release metadata and signing secret'), false);
   assert.match(releaseJob, /environment: production/);
-  assert.match(releaseJob, /Require exact protected tag and signing secret/);
+  assert.match(releaseJob, /Require validated release metadata and signing secret/);
 });
 
 test('unchanged official actions remain pinned to expected full SHAs', () => {
@@ -130,4 +130,23 @@ test('reproducibility job preserves normal build and handoff paths', () => {
   assert.match(job, /compare-reproducibility\.mjs/);
   assert.match(jobBlock(workflow, 'build').join('\n'), /upload_build_output/);
   assert.match(jobBlock(workflow, 'verify-artifact-handoff').join('\n'), /download-build-artifact\.mjs/);
+});
+
+test('release metadata preflight gates production before environment access', () => {
+  const preflight = jobBlock(workflow, 'release-preflight').join('\n');
+  const release = jobBlock(workflow, 'release').join('\n');
+  assert.match(workflow, /'ffmpeg-9\.0\.1-lame-3\.100-r\*'/);
+  assert.equal(workflow.includes("'ffmpeg-9.0.1-lame-3.100-r1'"), false);
+  assert.equal(preflight.includes('environment: production'), false);
+  assert.equal(preflight.includes('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM'), false);
+  assert.match(preflight, /PUBLISH_REQUESTED: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.publish == true \}\}/);
+  assert.match(release, /needs: \[build, release-preflight\]/);
+  assert.match(release, /needs\.release-preflight\.outputs\.release_allowed == 'true'/);
+  assert.match(release, /environment: production/);
+  assert.equal((workflow.match(/environment: production/g) ?? []).length, 1);
+  assert.match(release, /YUQI_RELEASE_TAG: \$\{\{ needs\.release-preflight\.outputs\.release_tag \}\}/);
+});
+
+test('existing non-production and reproducibility jobs remain present', () => {
+  for (const name of ['build', 'verify-artifact-handoff', 'verify-reproducibility']) assert.ok(jobBlock(workflow, name).length > 0);
 });
