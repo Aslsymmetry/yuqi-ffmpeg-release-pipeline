@@ -1,0 +1,20 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import * as openpgp from 'openpgp';
+import { ROOT, sha256 } from './lib.mjs';
+import lock from '../config/source-lock.json' with { type: 'json' };
+
+const downloads = path.join(ROOT, 'build', 'downloads');
+const ffmpeg = path.join(downloads, `ffmpeg-${lock.ffmpeg.version}.tar.xz`);
+const lame = path.join(downloads, `lame-${lock.lame.version}.tar.gz`);
+if (await sha256(ffmpeg) !== lock.ffmpeg.sha256) throw new Error('FFmpeg source SHA-256 mismatch');
+if (await sha256(lame) !== lock.lame.sha256) throw new Error('LAME source SHA-256 mismatch');
+if (await sha256(path.join(ROOT, lock.lame.patchPath)) !== lock.lame.patchSha256) throw new Error('LAME patch SHA-256 mismatch');
+const key = await openpgp.readKey({ armoredKey: await readFile(path.join(downloads, 'ffmpeg-devel.asc'), 'utf8') });
+const fingerprint = key.getFingerprint().toUpperCase();
+if (fingerprint !== lock.ffmpeg.signingKeyFingerprint) throw new Error(`FFmpeg signing fingerprint mismatch: ${fingerprint}`);
+const signature = await openpgp.readSignature({ armoredSignature: await readFile(path.join(downloads, `ffmpeg-${lock.ffmpeg.version}.tar.xz.asc`), 'utf8') });
+const message = await openpgp.createMessage({ binary: await readFile(ffmpeg) });
+const result = await openpgp.verify({ message, signature, verificationKeys: key });
+await result.signatures[0].verified;
+console.log(JSON.stringify({ ffmpegSha256: lock.ffmpeg.sha256, lameSha256: lock.lame.sha256, patchSha256: lock.lame.patchSha256, pgpSignatureValid: true, fingerprint, independentWebOfTrust: false }, null, 2));

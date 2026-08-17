@@ -1,0 +1,22 @@
+Yuqi FFmpeg release set corresponding source information
+
+FFmpeg 9.0.1
+Source: https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz
+SHA-256: cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635
+Detached signature: required and verified during every build
+Expected fingerprint: FCF986EA15E6E293A5644F10B4322F04D67658D8
+Trust limitation: a valid signature and fingerprint match do not independently establish Web-of-Trust.
+
+LAME 3.100
+Source: https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+SHA-256: ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+Upstream detached signature: unavailable
+Darwin export patch SHA-256: 3b1d3c4984f1083f3934ed3ce1d40e1824517ec26eb883d35265efa76b550773
+
+FFmpeg and FFprobe are built together. LAME is dynamically linked only through
+@loader_path/lib/libmp3lame.0.dylib. Build instructions and exact configure
+arguments are in scripts/build-ffmpeg-arm64.sh and config/source-lock.json.
+
+Licenses: FFmpeg LGPL-2.1-or-later; LAME LGPL-2.0-or-later. GPL and nonfree are disabled.
+Users may replace lib/libmp3lame.0.dylib with an ABI-compatible modified build.
+On macOS, modifying a signed bundle or dylib invalidates its existing code signature.

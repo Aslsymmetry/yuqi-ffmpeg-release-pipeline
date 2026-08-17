@@ -1,0 +1,87 @@
+name: Build and optionally publish FFmpeg set
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish assets only from the exact protected release tag
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - 'ffmpeg-9.0.1-lame-3.100-r1'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      SOURCE_DATE_EPOCH: '1786924800'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Assert official arm64 environment
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+      - run: npm ci --ignore-scripts
+      - run: npm run sources:download
+      - run: npm run sources:verify
+      - run: npm run build
+      - run: npm run verify:set
+      - name: Generate ephemeral CI test key
+        run: node scripts/generate-test-key.mjs /tmp/yuqi-ffmpeg-ci-test-key
+      - name: Create and verify test-signed release assets
+        shell: bash
+        run: |
+          export YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM="$(cat /tmp/yuqi-ffmpeg-ci-test-key/test-private.pem)"
+          export YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM="$(cat /tmp/yuqi-ffmpeg-ci-test-key/test-public.pem)"
+          npm run package
+          node scripts/sign-manifest.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.sig
+          node scripts/verify-manifest.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.sig /tmp/yuqi-ffmpeg-ci-test-key/test-public.pem
+          node scripts/verify-release-package.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.zip dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json
+          npm test
+          rm -rf /tmp/yuqi-ffmpeg-ci-test-key
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-build-output
+          path: build/output/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: Require exact protected tag and signing secret
+        env:
+          SIGNING_KEY: ${{ secrets.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM }}
+        run: |
+          test "$GITHUB_REF" = 'refs/tags/ffmpeg-9.0.1-lame-3.100-r1'
+          test -n "$SIGNING_KEY"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-build-output
+          path: build/output
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+      - run: npm ci --ignore-scripts
+      - name: Sign with protected release key
+        env:
+          YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: ${{ secrets.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM }}
+        run: npm run release:sign
+      - name: Publish four immutable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ffmpeg-9.0.1-lame-3.100-r1 --verify-tag --draft --title 'FFmpeg 9.0.1 + LAME 3.100 r1' dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.zip dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.sig dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.SHA256SUMS

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "ffmpeg": {
+    "version": "9.0.1",
+    "sourceUrl": "https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz",
+    "signatureUrl": "https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz.asc",
+    "sha256": "cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635",
+    "signingKeyUrl": "https://ffmpeg.org/ffmpeg-devel.asc",
+    "signingKeyFingerprint": "FCF986EA15E6E293A5644F10B4322F04D67658D8",
+    "license": "LGPL-2.1-or-later"
+  },
+  "lame": {
+    "version": "3.100",
+    "sourceUrl": "https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz",
+    "sha256": "ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e",
+    "license": "LGPL-2.0-or-later",
+    "signatureAvailable": false,
+    "patchPath": "patches/lame-3.100-darwin-export.patch",
+    "patchSha256": "3b1d3c4984f1083f3934ed3ce1d40e1824517ec26eb883d35265efa76b550773"
+  },
+  "target": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "deploymentTarget": "12.0",
+    "lameInstallName": "@loader_path/lib/libmp3lame.0.dylib"
+  }
+}

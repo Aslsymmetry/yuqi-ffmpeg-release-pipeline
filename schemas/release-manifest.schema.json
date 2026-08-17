@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:yuqi:ffmpeg-release-manifest:v1",
+  "title": "Yuqi FFmpeg release manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "minimumConsumerSchemaVersion", "manifestKind", "releaseTag", "channel", "ffmpegVersion", "ffprobeVersion", "lameVersion", "platform", "architecture", "deploymentTarget", "setId", "packageFilename", "packageSha256", "packageSize", "files", "sources", "configureArguments", "build", "licenses", "allowedDependencies", "smokeTests", "provenanceClassification", "signing"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "minimumConsumerSchemaVersion": { "const": 1 },
+    "manifestKind": { "enum": ["payload", "release-envelope"] },
+    "releaseTag": { "const": "ffmpeg-9.0.1-lame-3.100-r1" },
+    "channel": { "const": "stable" },
+    "ffmpegVersion": { "const": "9.0.1" },
+    "ffprobeVersion": { "const": "9.0.1" },
+    "lameVersion": { "const": "3.100" },
+    "platform": { "const": "darwin" },
+    "architecture": { "const": "arm64" },
+    "deploymentTarget": { "const": "12.0" },
+    "setId": { "pattern": "^ffmpeg-9\\.0\\.1-lame-3\\.100-arm64-[a-f0-9]{8}-[a-f0-9]{8}-[a-f0-9]{8}$" },
+    "packageFilename": { "type": ["string", "null"] }, "packageSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" }, "packageSize": { "type": ["integer", "null"], "minimum": 1 },
+    "files": { "type": "object" }, "sources": { "type": "object" }, "configureArguments": { "type": "array", "items": { "type": "string" } },
+    "build": { "type": "object" }, "licenses": { "type": "object" }, "allowedDependencies": { "type": "array", "items": { "type": "string" } },
+    "smokeTests": { "type": "array", "items": { "type": "string" } }, "provenanceClassification": { "const": "OFFICIAL_SOURCE_REPRODUCIBLE_CI_BUILD" }, "signing": { "type": "object" }
+  }
+}

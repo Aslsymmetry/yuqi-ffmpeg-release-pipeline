@@ -1,0 +1,18 @@
+{
+  "name": "yuqi-ffmpeg-release-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12.0 <23" },
+  "scripts": {
+    "sources:download": "node scripts/download-sources.mjs",
+    "sources:verify": "node scripts/verify-sources.mjs",
+    "build": "sh scripts/build-ffmpeg-arm64.sh",
+    "verify:set": "node scripts/verify-release-set.mjs build/output",
+    "manifest": "node scripts/create-manifest.mjs",
+    "package": "node scripts/create-release-package.mjs",
+    "release:sign": "node scripts/create-signed-release.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": { "openpgp": "6.3.1" }
+}

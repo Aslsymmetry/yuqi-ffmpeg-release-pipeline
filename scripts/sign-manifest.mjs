@@ -1,0 +1,16 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
+import { canonicalJson, publicKeyFingerprint } from './lib.mjs';
+
+const [manifestPath, signaturePath] = process.argv.slice(2);
+if (!manifestPath || !signaturePath) throw new Error('Usage: sign-manifest MANIFEST SIGNATURE');
+const privatePem = process.env.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM;
+if (!privatePem) throw new Error('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM is required; release signing fails closed.');
+const privateKey = createPrivateKey(privatePem.replace(/\\n/g, '\n'));
+const publicPem = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
+const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+const fingerprint = publicKeyFingerprint(publicPem);
+if (manifest.signing?.publicKeyFingerprint !== fingerprint || manifest.signing?.keyId !== `ed25519-sha256:${fingerprint.slice(0, 16)}`) throw new Error('Manifest signing key metadata does not match private key');
+const signature = sign(null, Buffer.from(canonicalJson(manifest)), privateKey).toString('base64');
+await writeFile(signaturePath, `YUQI-ED25519-SIGNATURE-V1\n${manifest.signing.keyId}\n${signature}\n`, { mode: 0o644 });
+console.log(`Signed ${manifestPath} with ${manifest.signing.keyId}`);
