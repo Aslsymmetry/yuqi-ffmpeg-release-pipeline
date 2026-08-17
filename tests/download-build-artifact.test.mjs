@@ -102,6 +102,40 @@ test('valid metadata and exact ZIP install successfully', async (t) => {
   assert.equal((await stat(path.join(context.config.destination, 'lib/libmp3lame.0.dylib'))).mode & 0o111, 0);
 });
 
+test('build output digest accepts bare lowercase hex and normalizes exactly once', () => {
+  const hex = 'a'.repeat(64);
+  assert.equal(testing.parseBuildOutputDigest(hex), `sha256:${hex}`);
+});
+
+test('API metadata digest accepts only the prefixed lowercase form', () => {
+  const normalized = `sha256:${'a'.repeat(64)}`;
+  assert.equal(testing.parseMetadataDigest(normalized), normalized);
+  assert.throws(() => testing.parseMetadataDigest('a'.repeat(64)), /sha256: prefix/);
+});
+
+for (const [label, digest] of [
+  ['sha256 prefix', `sha256:${'a'.repeat(64)}`],
+  ['uppercase hex', 'A'.repeat(64)],
+  ['short length', 'a'.repeat(63)],
+  ['long length', 'a'.repeat(65)],
+  ['non-hex character', `${'a'.repeat(63)}g`],
+]) test(`build output digest rejects ${label}`, () => {
+  assert.throws(() => testing.parseBuildOutputDigest(digest), /64 lowercase hexadecimal characters without a prefix/);
+});
+
+test('normalized build output and API metadata digests compare successfully', async (t) => {
+  const archive = zip();
+  const hex = createHash('sha256').update(archive).digest('hex');
+  const context = await execute(t, { archive, config: { digest: testing.parseBuildOutputDigest(hex) } });
+  await context.run();
+});
+
+test('API and normalized build output digest mismatch is fail-closed without retry', async (t) => {
+  const context = await execute(t, { metadata: { digest: `sha256:${'b'.repeat(64)}` } });
+  await assert.rejects(context.run(), /metadata digest mismatch/);
+  assert.deepEqual(context.waits, []);
+});
+
 for (const [label, metadata, message] of [
   ['artifact ID mismatch', { id: 999 }, /ID mismatch/],
   ['artifact name mismatch', { name: 'other' }, /name mismatch/],

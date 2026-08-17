@@ -41,8 +41,13 @@ function required(value, name) {
   return value;
 }
 
-function parseDigest(value, name) {
-  if (!/^sha256:[a-f0-9]{64}$/.test(value ?? '')) throw new Error(`${name} must be a lowercase SHA-256 digest`);
+function parseBuildOutputDigest(value) {
+  if (!/^[a-f0-9]{64}$/.test(value ?? '')) throw new Error('EXPECTED_ARTIFACT_DIGEST must be 64 lowercase hexadecimal characters without a prefix');
+  return `sha256:${value}`;
+}
+
+function parseMetadataDigest(value) {
+  if (!/^sha256:[a-f0-9]{64}$/.test(value ?? '')) throw new Error('Artifact metadata digest must be a lowercase SHA-256 digest with a sha256: prefix');
   return value;
 }
 
@@ -251,7 +256,7 @@ function validateMetadata(metadata, expected) {
   if (metadata?.expired !== false) throw new Error('Artifact is expired');
   if (metadata?.workflow_run?.id !== expected.runId) throw new Error('Artifact workflow run ID mismatch');
   if (metadata?.workflow_run?.head_sha !== expected.sha) throw new Error('Artifact head SHA mismatch');
-  const digest = parseDigest(metadata?.digest, 'Artifact metadata digest');
+  const digest = parseMetadataDigest(metadata?.digest);
   if (digest !== expected.digest) throw new Error('Artifact metadata digest mismatch');
   if (!Number.isSafeInteger(metadata?.size_in_bytes) || metadata.size_in_bytes <= 0 || metadata.size_in_bytes > MAX_ARCHIVE_BYTES) throw new Error('Artifact metadata size is invalid');
 }
@@ -269,7 +274,7 @@ function configFromEnvironment(environment = process.env) {
     runId: positiveInteger(environment.GITHUB_RUN_ID, 'GITHUB_RUN_ID'),
     sha,
     artifactId: positiveInteger(environment.EXPECTED_ARTIFACT_ID, 'EXPECTED_ARTIFACT_ID'),
-    digest: parseDigest(environment.EXPECTED_ARTIFACT_DIGEST, 'EXPECTED_ARTIFACT_DIGEST'),
+    digest: parseBuildOutputDigest(environment.EXPECTED_ARTIFACT_DIGEST),
     artifactName,
     destination: path.join(ROOT, ARTIFACT_DESTINATION),
   };
@@ -353,7 +358,8 @@ export async function downloadBuildArtifact(config, dependencies = {}) {
 
 export const testing = {
   ARTIFACT_NAME, ARTIFACT_DESTINATION, MAX_ATTEMPTS, MAX_ARCHIVE_BYTES,
-  crc32, parseZip, retryAfterMilliseconds, validateRedirect, validateMetadata,
+  crc32, parseBuildOutputDigest, parseMetadataDigest, parseZip,
+  retryAfterMilliseconds, validateRedirect, validateMetadata,
 };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
