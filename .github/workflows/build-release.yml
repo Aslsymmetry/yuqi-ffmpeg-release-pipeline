@@ -19,6 +19,9 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.upload_build_output.outputs['artifact-id'] }}
+      artifact-digest: ${{ steps.upload_build_output.outputs['artifact-digest'] }}
     env:
       SOURCE_DATE_EPOCH: '1786924800'
     steps:
@@ -50,11 +53,45 @@ jobs:
           node scripts/verify-release-package.mjs dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.zip dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json
           npm test
           rm -rf /tmp/yuqi-ffmpeg-ci-test-key
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - id: upload_build_output
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verified-build-output
           path: build/output/
           if-no-files-found: error
+      - name: Require artifact identity outputs
+        env:
+          ARTIFACT_ID: ${{ steps.upload_build_output.outputs['artifact-id'] }}
+          ARTIFACT_DIGEST: ${{ steps.upload_build_output.outputs['artifact-digest'] }}
+        run: |
+          test -n "$ARTIFACT_ID"
+          test -n "$ARTIFACT_DIGEST"
+
+  verify-artifact-handoff:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == false
+    runs-on: macos-15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.22.0'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - name: Download and verify exact build artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.build.outputs['artifact-id'] }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.build.outputs['artifact-digest'] }}
+          EXPECTED_ARTIFACT_NAME: verified-build-output
+          ARTIFACT_DESTINATION: build/output
+        run: node scripts/download-build-artifact.mjs
 
   release:
     needs: build
@@ -63,6 +100,7 @@ jobs:
     environment: production
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -76,10 +114,17 @@ jobs:
         run: |
           test "$GITHUB_REF" = 'refs/tags/ffmpeg-9.0.1-lame-3.100-r1'
           test -n "$SIGNING_KEY"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: verified-build-output
-          path: build/output
+      - name: Download and verify exact build artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.build.outputs['artifact-id'] }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.build.outputs['artifact-digest'] }}
+          EXPECTED_ARTIFACT_NAME: verified-build-output
+          ARTIFACT_DESTINATION: build/output
+        run: node scripts/download-build-artifact.mjs
       - name: Verify production signing identity against pinned trust
         env:
           YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: ${{ secrets.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM }}

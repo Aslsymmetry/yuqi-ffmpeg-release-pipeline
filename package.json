@@ -9,6 +9,7 @@
     "sources:verify": "node scripts/verify-sources.mjs",
     "build": "sh scripts/build-ffmpeg-arm64.sh",
     "verify:set": "node scripts/verify-release-set.mjs build/output",
+    "artifact:download": "node scripts/download-build-artifact.mjs",
     "manifest": "node scripts/create-manifest.mjs",
     "package": "node scripts/create-release-package.mjs",
     "release:verify-key": "node scripts/verify-production-signing-key.mjs",
