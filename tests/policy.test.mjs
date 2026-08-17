@@ -50,7 +50,8 @@ test('build policy is arm64 LGPL, offline runtime, and relative LAME', () => {
 test('workflow uses official arm64 label and publishing is explicit and draft', () => {
   assert.ok(workflow.includes('runs-on: macos-15'));
   assert.ok(workflow.includes("inputs.publish == true"));
-  assert.ok(workflow.includes('--draft'));
+  assert.ok(workflow.includes('npm run release:draft'));
+  assert.equal(workflow.includes('gh release create'), false);
   assert.ok(workflow.includes('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM'));
   assert.ok(workflow.includes('environment: production'));
   assert.ok(workflow.includes('npm run release:verify-key'));
@@ -67,7 +68,7 @@ test('release job preserves artifact output by checking out before download', ()
   const download = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Download and verify exact build artifact', 'internal artifact download');
   const identity = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Verify production signing identity against pinned trust', 'signing identity verification');
   const sign = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Sign with protected release key', 'release signing');
-  const publish = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Publish four immutable assets', 'draft release publishing');
+  const publish = stepIndex(steps, (step) => step.kind === 'name' && step.value === 'Recover or create verified Draft Release', 'draft release recovery');
 
   assert.ok(checkout < download);
   assert.ok(setupNode < download);
@@ -77,6 +78,7 @@ test('release job preserves artifact output by checking out before download', ()
   assert.ok(download < identity);
   assert.ok(download < sign);
   assert.ok(download < publish);
+  assert.ok(steps[publish].lines.some((line) => /^        run: npm run release:draft$/.test(line)));
   assert.ok(steps[download].lines.some((line) => /^          ARTIFACT_DESTINATION: build\/output$/.test(line)));
   assert.ok(steps[download].lines.some((line) => /^        run: node scripts\/download-build-artifact\.mjs$/.test(line)));
   assert.equal(steps[checkout].lines.some((line) => /^          clean:\s*false\s*$/.test(line)), false);

@@ -133,7 +133,7 @@ jobs:
         env:
           YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: ${{ secrets.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM }}
         run: npm run release:sign
-      - name: Publish four immutable assets
+      - name: Recover or create verified Draft Release
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create ffmpeg-9.0.1-lame-3.100-r1 --verify-tag --draft --title 'FFmpeg 9.0.1 + LAME 3.100 r1' dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.zip dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.json dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.manifest.sig dist/yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r1.SHA256SUMS
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run release:draft
