@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      reproducibility_check:
+        description: Build twice in isolated roots and require exact binary hashes
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'ffmpeg-9.0.1-lame-3.100-r1'
@@ -92,6 +97,37 @@ jobs:
           EXPECTED_ARTIFACT_NAME: verified-build-output
           ARTIFACT_DESTINATION: build/output
         run: node scripts/download-build-artifact.mjs
+
+  verify-reproducibility:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == false && inputs.reproducibility_check == true
+    runs-on: macos-15
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      SOURCE_DATE_EPOCH: '1786924800'
+      YUQI_FFMPEG_JOBS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.22.0'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run sources:download
+      - run: npm run sources:verify
+      - name: Build twice in isolated clean roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          first="$RUNNER_TEMP/yuqi-repro-first"
+          second="$RUNNER_TEMP/yuqi-repro-second"
+          test "$first" != "$second"
+          YUQI_FFMPEG_BUILD_ROOT="$first" YUQI_FFMPEG_OUTPUT="$first/output" YUQI_FFMPEG_TRACE_DIR="$first/trace" npm run build
+          node scripts/verify-release-set.mjs "$first/output"
+          YUQI_FFMPEG_BUILD_ROOT="$second" YUQI_FFMPEG_OUTPUT="$second/output" YUQI_FFMPEG_TRACE_DIR="$second/trace" npm run build
+          node scripts/verify-release-set.mjs "$second/output"
+          node scripts/compare-reproducibility.mjs "$first/trace" "$second/trace"
 
   release:
     needs: build

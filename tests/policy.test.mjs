@@ -119,3 +119,15 @@ test('unchanged official actions remain pinned to expected full SHAs', () => {
   assert.match(workflow, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7\.0\.0/g);
   assert.match(workflow, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/);
 });
+
+test('reproducibility job preserves normal build and handoff paths', () => {
+  const job = jobBlock(workflow, 'verify-reproducibility').join('\n');
+  assert.match(job, /inputs\.publish == false && inputs\.reproducibility_check == true/);
+  assert.equal(job.includes('environment: production'), false);
+  assert.equal(job.includes('PRIVATE_KEY'), false);
+  assert.match(job, /YUQI_FFMPEG_BUILD_ROOT="\$first"/);
+  assert.match(job, /YUQI_FFMPEG_BUILD_ROOT="\$second"/);
+  assert.match(job, /compare-reproducibility\.mjs/);
+  assert.match(jobBlock(workflow, 'build').join('\n'), /upload_build_output/);
+  assert.match(jobBlock(workflow, 'verify-artifact-handoff').join('\n'), /download-build-artifact\.mjs/);
+});
