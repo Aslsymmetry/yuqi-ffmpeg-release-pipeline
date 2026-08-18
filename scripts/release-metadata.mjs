@@ -1,6 +1,19 @@
 import lock from '../config/source-lock.json' with { type: 'json' };
 
 export const FIXTURE_RELEASE_TAG = `ffmpeg-${lock.ffmpeg.version}-lame-${lock.lame.version}-r1`;
+export const LEGACY_SCHEMA_V1_RELEASE_TAGS = Object.freeze([
+  'ffmpeg-9.0.1-lame-3.100-r1',
+  'ffmpeg-9.0.1-lame-3.100-r2',
+]);
+
+export function manifestPolicyForReleaseTag(releaseTag) {
+  const schemaVersion = LEGACY_SCHEMA_V1_RELEASE_TAGS.includes(releaseTag) ? 1 : 2;
+  return Object.freeze({
+    manifestSchemaVersion: schemaVersion,
+    minimumConsumerSchemaVersion: schemaVersion,
+    signingKeyGeneration: schemaVersion === 1 ? 'v1' : 'v2',
+  });
+}
 
 export function parseReleaseTag(value) {
   if (typeof value !== 'string') throw new Error('Release tag must be a string');
@@ -14,6 +27,7 @@ export function parseReleaseTag(value) {
   const releaseTag = `ffmpeg-${ffmpegVersion}-lame-${lameVersion}-${revisionLabel}`;
   if (releaseTag !== value) throw new Error('Release tag is not canonical');
   const assetBase = `yuqi-ffmpeg-${ffmpegVersion}-lame-${lameVersion}-macos-arm64-${revisionLabel}`;
+  const manifestPolicy = manifestPolicyForReleaseTag(releaseTag);
   return Object.freeze({
     releaseTag,
     ffmpegVersion,
@@ -22,6 +36,7 @@ export function parseReleaseTag(value) {
     revisionLabel,
     releaseTitle: `FFmpeg ${ffmpegVersion} + LAME ${lameVersion} ${revisionLabel}`,
     assetBase,
+    ...manifestPolicy,
     assetNames: Object.freeze([
       `${assetBase}.zip`,
       `${assetBase}.manifest.json`,
@@ -50,6 +65,9 @@ export function assertProductionReleaseEnvironment(metadata, environment = proce
     YUQI_FFMPEG_VERSION: metadata.ffmpegVersion,
     YUQI_LAME_VERSION: metadata.lameVersion,
     YUQI_REVISION_LABEL: metadata.revisionLabel,
+    YUQI_MANIFEST_SCHEMA_VERSION: String(metadata.manifestSchemaVersion),
+    YUQI_MINIMUM_CONSUMER_SCHEMA_VERSION: String(metadata.minimumConsumerSchemaVersion),
+    YUQI_SIGNING_KEY_GENERATION: metadata.signingKeyGeneration,
   };
   for (const [name, value] of Object.entries(expected)) if (required(environment, name) !== value) throw new Error(`${name} does not match parsed release metadata`);
   return metadata;

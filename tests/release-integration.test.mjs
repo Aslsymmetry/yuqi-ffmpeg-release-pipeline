@@ -12,7 +12,7 @@ const run = (file, args, options = {}) => execFileSync(file, args, { encoding: '
 const key = generateKeyPairSync('ed25519');
 const privatePem = key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 const publicPem = key.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-const metadata = parseReleaseTag('ffmpeg-9.0.1-lame-3.100-r2');
+const metadata = parseReleaseTag('ffmpeg-9.0.1-lame-3.100-r3');
 const ASSET_BASE = metadata.assetBase;
 const env = { ...process.env, SOURCE_DATE_EPOCH: '1786924800', YUQI_RELEASE_TAG: metadata.releaseTag, YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: privatePem, YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM: publicPem };
 const dist = path.join(ROOT, 'dist');
@@ -43,6 +43,8 @@ test('build output packages, signs, verifies and rejects supply-chain mutations'
     run(process.execPath, [path.join(ROOT, 'scripts/verify-release-package.mjs'), zip, manifest]);
     const releaseManifest = JSON.parse(await readFile(manifest, 'utf8'));
     assert.equal(releaseManifest.releaseTag, metadata.releaseTag);
+    assert.equal(releaseManifest.schemaVersion, 2);
+    assert.equal(releaseManifest.minimumConsumerSchemaVersion, 2);
     assert.equal(releaseManifest.packageFilename, metadata.assetNames[0]);
 
     const tamperedManifest = path.join(temporary, 'tampered.manifest.json');

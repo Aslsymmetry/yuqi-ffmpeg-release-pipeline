@@ -7,13 +7,13 @@ import { ROOT } from './lib.mjs';
 import { releaseMetadataFromEnvironment } from './release-metadata.mjs';
 import { verifyPinnedProductionSigningIdentity } from './production-trust.mjs';
 
+const metadata = releaseMetadataFromEnvironment(process.env);
 const privatePem = process.env.YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM?.replace(/\\n/g, '\n');
 if (!privatePem) throw new Error('YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM is required; production release fails closed.');
 const privateKey = createPrivateKey(privatePem);
 const publicPem = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
-await verifyPinnedProductionSigningIdentity(publicPem);
+await verifyPinnedProductionSigningIdentity(publicPem, metadata.manifestSchemaVersion);
 const env = { ...process.env, YUQI_FFMPEG_ED25519_PRIVATE_KEY_PEM: privatePem, YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM: publicPem };
-const metadata = releaseMetadataFromEnvironment(process.env);
 const dist = path.join(ROOT, 'dist');
 const manifest = path.join(dist, `${metadata.assetBase}.manifest.json`);
 const signature = path.join(dist, `${metadata.assetBase}.manifest.sig`);

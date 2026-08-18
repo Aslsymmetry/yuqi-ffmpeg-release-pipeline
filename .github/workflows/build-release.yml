@@ -113,6 +113,9 @@ jobs:
       ffmpeg_version: ${{ steps.preflight.outputs.ffmpeg_version }}
       lame_version: ${{ steps.preflight.outputs.lame_version }}
       revision_label: ${{ steps.preflight.outputs.revision_label }}
+      manifest_schema_version: ${{ steps.preflight.outputs.manifest_schema_version }}
+      minimum_consumer_schema_version: ${{ steps.preflight.outputs.minimum_consumer_schema_version }}
+      signing_key_generation: ${{ steps.preflight.outputs.signing_key_generation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -176,6 +179,9 @@ jobs:
       YUQI_FFMPEG_VERSION: ${{ needs.release-preflight.outputs.ffmpeg_version }}
       YUQI_LAME_VERSION: ${{ needs.release-preflight.outputs.lame_version }}
       YUQI_REVISION_LABEL: ${{ needs.release-preflight.outputs.revision_label }}
+      YUQI_MANIFEST_SCHEMA_VERSION: ${{ needs.release-preflight.outputs.manifest_schema_version }}
+      YUQI_MINIMUM_CONSUMER_SCHEMA_VERSION: ${{ needs.release-preflight.outputs.minimum_consumer_schema_version }}
+      YUQI_SIGNING_KEY_GENERATION: ${{ needs.release-preflight.outputs.signing_key_generation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

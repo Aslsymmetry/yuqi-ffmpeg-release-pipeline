@@ -30,7 +30,22 @@ test('main publish=true is rejected before production and before network', async
 test('valid annotated r2 tag yields exact release outputs', async () => {
   const result = await runReleasePreflight(base, { execFile: annotated, fetchImpl: async () => response([]), timeoutFactory: () => undefined });
   assert.equal(result.allowed, true);
-  for (const line of ['release_allowed=true', `release_tag=${TAG}`, 'release_title=FFmpeg 9.0.1 + LAME 3.100 r2', 'asset_base=yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r2']) assert.ok(result.output.includes(line));
+  for (const line of ['release_allowed=true', `release_tag=${TAG}`, 'release_title=FFmpeg 9.0.1 + LAME 3.100 r2', 'asset_base=yuqi-ffmpeg-9.0.1-lame-3.100-macos-arm64-r2', 'manifest_schema_version=1', 'minimum_consumer_schema_version=1', 'signing_key_generation=v1']) assert.ok(result.output.includes(line));
+});
+
+
+
+test('valid annotated r3 tag requires schema v2 and v2 signing generation', async () => {
+  const tag = 'ffmpeg-9.0.1-lame-3.100-r3';
+  const environment = {
+    ...base,
+    GITHUB_REF_NAME: tag,
+    GITHUB_REF: `refs/tags/${tag}`,
+  };
+  const result = await runReleasePreflight(environment, { execFile: annotated, fetchImpl: async () => response([]), timeoutFactory: () => undefined });
+  for (const line of ['manifest_schema_version=2', 'minimum_consumer_schema_version=2', 'signing_key_generation=v2']) {
+    assert.ok(result.output.includes(line));
+  }
 });
 
 test('annotated tag target mismatch is rejected before API lookup', async () => {

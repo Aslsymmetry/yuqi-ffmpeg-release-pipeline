@@ -5,6 +5,10 @@ import { canonicalJson, publicKeyFingerprint } from './lib.mjs';
 const [manifestPath, signaturePath, publicKeyPath] = process.argv.slice(2);
 if (!publicKeyPath) throw new Error('Usage: verify-manifest MANIFEST SIGNATURE PUBLIC_KEY');
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+if (![1, 2].includes(manifest.schemaVersion)
+  || manifest.minimumConsumerSchemaVersion !== manifest.schemaVersion) {
+  throw new Error('Manifest schema compatibility fields are invalid');
+}
 const lines = (await readFile(signaturePath, 'utf8')).trim().split('\n');
 if (lines.length !== 3 || lines[0] !== 'YUQI-ED25519-SIGNATURE-V1') throw new Error('Invalid signature envelope');
 const publicPem = await readFile(publicKeyPath, 'utf8');

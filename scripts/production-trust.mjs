@@ -3,8 +3,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ROOT, publicKeyFingerprint } from './lib.mjs';
 
-export const PRODUCTION_PUBLIC_KEY_PATH = path.join(ROOT, 'trust/production/yuqi-ffmpeg-ed25519-public.pem');
-export const PRODUCTION_FINGERPRINT_PATH = path.join(ROOT, 'trust/production/yuqi-ffmpeg-ed25519-fingerprint.txt');
+export const PRODUCTION_V1_PUBLIC_KEY_PATH = path.join(ROOT, 'trust/production/yuqi-ffmpeg-ed25519-public.pem');
+export const PRODUCTION_V1_FINGERPRINT_PATH = path.join(ROOT, 'trust/production/yuqi-ffmpeg-ed25519-fingerprint.txt');
+export const PRODUCTION_V2_PUBLIC_KEY_PATH = path.join(ROOT, 'trust/production/yuqi-ffmpeg-ed25519-v2-public.pem');
+export const PRODUCTION_V2_FINGERPRINT_PATH = path.join(ROOT, 'trust/production/yuqi-ffmpeg-ed25519-v2-fingerprint.txt');
+
+// Backward-compatible aliases for the already-published schema-v1 trust anchor.
+export const PRODUCTION_PUBLIC_KEY_PATH = PRODUCTION_V1_PUBLIC_KEY_PATH;
+export const PRODUCTION_FINGERPRINT_PATH = PRODUCTION_V1_FINGERPRINT_PATH;
 
 export function parseProductionFingerprint(text) {
   const lines = text.trim().split(/\r?\n/);
@@ -23,6 +29,22 @@ function ed25519SpkiDer(pem) {
   return key.export({ type: 'spki', format: 'der' });
 }
 
+export function productionTrustPathsForSchema(schemaVersion) {
+  if (schemaVersion === 1) return Object.freeze({
+    schemaVersion: 1,
+    generation: 'v1',
+    publicKeyPath: PRODUCTION_V1_PUBLIC_KEY_PATH,
+    fingerprintPath: PRODUCTION_V1_FINGERPRINT_PATH,
+  });
+  if (schemaVersion === 2) return Object.freeze({
+    schemaVersion: 2,
+    generation: 'v2',
+    publicKeyPath: PRODUCTION_V2_PUBLIC_KEY_PATH,
+    fingerprintPath: PRODUCTION_V2_FINGERPRINT_PATH,
+  });
+  throw new Error('Unsupported production manifest schema version.');
+}
+
 export function verifyProductionSigningIdentity({ derivedPublicPem, trustedPublicPem, fingerprintText }) {
   const derivedDer = ed25519SpkiDer(derivedPublicPem);
   const trustedDer = ed25519SpkiDer(trustedPublicPem);
@@ -36,10 +58,12 @@ export function verifyProductionSigningIdentity({ derivedPublicPem, trustedPubli
   return { fingerprint, keyId };
 }
 
-export async function verifyPinnedProductionSigningIdentity(derivedPublicPem) {
+export async function verifyPinnedProductionSigningIdentity(derivedPublicPem, schemaVersion) {
+  const policy = productionTrustPathsForSchema(schemaVersion);
   const [trustedPublicPem, fingerprintText] = await Promise.all([
-    readFile(PRODUCTION_PUBLIC_KEY_PATH, 'utf8'),
-    readFile(PRODUCTION_FINGERPRINT_PATH, 'utf8'),
+    readFile(policy.publicKeyPath, 'utf8'),
+    readFile(policy.fingerprintPath, 'utf8'),
   ]);
-  return verifyProductionSigningIdentity({ derivedPublicPem, trustedPublicPem, fingerprintText });
+  const identity = verifyProductionSigningIdentity({ derivedPublicPem, trustedPublicPem, fingerprintText });
+  return Object.freeze({ ...policy, ...identity });
 }

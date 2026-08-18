@@ -145,6 +145,9 @@ test('release metadata preflight gates production before environment access', ()
   assert.match(release, /environment: production/);
   assert.equal((workflow.match(/environment: production/g) ?? []).length, 1);
   assert.match(release, /YUQI_RELEASE_TAG: \$\{\{ needs\.release-preflight\.outputs\.release_tag \}\}/);
+  assert.match(release, /YUQI_MANIFEST_SCHEMA_VERSION: \${{ needs\.release-preflight\.outputs\.manifest_schema_version }}/);
+  assert.match(release, /YUQI_MINIMUM_CONSUMER_SCHEMA_VERSION: \${{ needs\.release-preflight\.outputs\.minimum_consumer_schema_version }}/);
+  assert.match(release, /YUQI_SIGNING_KEY_GENERATION: \${{ needs\.release-preflight\.outputs\.signing_key_generation }}/);
 });
 
 test('existing non-production and reproducibility jobs remain present', () => {

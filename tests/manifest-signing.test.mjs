@@ -17,3 +17,10 @@ test('Ed25519 accepts canonical manifest and rejects mutation and wrong key', ()
   assert.equal(verify(null, Buffer.from(canonicalJson(manifest)), second.publicKey, signature), false);
   assert.match(publicKeyFingerprint(first.publicKey.export({ type: 'spki', format: 'pem' })), /^[a-f0-9]{64}$/);
 });
+
+test('schema-v2 manifests retain canonical Ed25519 verification', () => {
+  const key = generateKeyPairSync('ed25519');
+  const manifest = { schemaVersion: 2, minimumConsumerSchemaVersion: 2, setId: 'future' };
+  const signature = sign(null, Buffer.from(canonicalJson(manifest)), key.privateKey);
+  assert.equal(verify(null, Buffer.from(canonicalJson(manifest)), key.publicKey, signature), true);
+});

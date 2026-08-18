@@ -25,6 +25,9 @@ function outputLines(metadata, allowed) {
     ffmpeg_version: allowed ? metadata.ffmpegVersion : '',
     lame_version: allowed ? metadata.lameVersion : '',
     revision_label: allowed ? metadata.revisionLabel : '',
+    manifest_schema_version: allowed ? String(metadata.manifestSchemaVersion) : '',
+    minimum_consumer_schema_version: allowed ? String(metadata.minimumConsumerSchemaVersion) : '',
+    signing_key_generation: allowed ? metadata.signingKeyGeneration : '',
   };
   return `${Object.entries(values).map(([name, value]) => `${name}=${value}`).join('\n')}\n`;
 }

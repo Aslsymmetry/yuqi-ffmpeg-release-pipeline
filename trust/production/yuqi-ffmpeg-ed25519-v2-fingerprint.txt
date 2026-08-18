@@ -1,0 +1,2 @@
+fingerprint=14b0bbaf1dba378ae5f5a4afcdb00483485299723d26a8f9c62cd81ad8692551
+keyId=ed25519-sha256:14b0bbaf1dba378a

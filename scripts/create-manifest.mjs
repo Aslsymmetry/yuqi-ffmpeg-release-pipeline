@@ -20,7 +20,7 @@ export async function createManifest({ payload, packageFile, output, smokeTests,
   if (!publicPem) throw new Error('YUQI_FFMPEG_ED25519_PUBLIC_KEY_PEM is required');
   const fingerprint = publicKeyFingerprint(publicPem);
   const manifest = {
-    schemaVersion: 1, minimumConsumerSchemaVersion: 1, manifestKind: packageFile ? 'release-envelope' : 'payload',
+    schemaVersion: metadata.manifestSchemaVersion, minimumConsumerSchemaVersion: metadata.minimumConsumerSchemaVersion, manifestKind: packageFile ? 'release-envelope' : 'payload',
     releaseTag: metadata.releaseTag, channel: 'stable', ffmpegVersion: metadata.ffmpegVersion, ffprobeVersion: metadata.ffmpegVersion, lameVersion: metadata.lameVersion,
     platform: 'darwin', architecture: 'arm64', deploymentTarget: '12.0', setId,
     packageFilename: packageFile ? path.basename(packageFile) : null,

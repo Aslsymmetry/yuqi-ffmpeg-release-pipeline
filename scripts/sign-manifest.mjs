@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { canonicalJson, publicKeyFingerprint } from './lib.mjs';
 import { assertProductionReleaseEnvironment, parseReleaseTag } from './release-metadata.mjs';
+import { verifyPinnedProductionSigningIdentity } from './production-trust.mjs';
 
 const [manifestPath, signaturePath] = process.argv.slice(2);
 if (!manifestPath || !signaturePath) throw new Error('Usage: sign-manifest MANIFEST SIGNATURE');
@@ -11,10 +12,17 @@ const privateKey = createPrivateKey(privatePem.replace(/\\n/g, '\n'));
 const publicPem = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
 const metadata = parseReleaseTag(manifest.releaseTag);
+if (manifest.schemaVersion !== metadata.manifestSchemaVersion
+  || manifest.minimumConsumerSchemaVersion !== metadata.minimumConsumerSchemaVersion) {
+  throw new Error('Manifest schema does not match release tag policy');
+}
 assertProductionReleaseEnvironment(metadata);
 if (process.env.YUQI_RELEASE_TAG && process.env.YUQI_RELEASE_TAG !== metadata.releaseTag) throw new Error('Manifest release tag does not match validated release metadata');
 if (process.env.YUQI_ASSET_BASE && process.env.YUQI_ASSET_BASE !== metadata.assetBase) throw new Error('Manifest asset metadata does not match validated release metadata');
 const fingerprint = publicKeyFingerprint(publicPem);
+if (process.env.YUQI_PRODUCTION_RELEASE === 'true') {
+  await verifyPinnedProductionSigningIdentity(publicPem, metadata.manifestSchemaVersion);
+}
 if (manifest.signing?.publicKeyFingerprint !== fingerprint || manifest.signing?.keyId !== `ed25519-sha256:${fingerprint.slice(0, 16)}`) throw new Error('Manifest signing key metadata does not match private key');
 const signature = sign(null, Buffer.from(canonicalJson(manifest)), privateKey).toString('base64');
 await writeFile(signaturePath, `YUQI-ED25519-SIGNATURE-V1\n${manifest.signing.keyId}\n${signature}\n`, { mode: 0o644 });
